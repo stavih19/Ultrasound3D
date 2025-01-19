@@ -1,2 +1,6 @@
 /env1
-IM_0003_mp4_volume.nii
+/build
+/dist/main
+/dist
+*.nii
+main.spec

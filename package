@@ -1,0 +1,3 @@
+pyinstaller --onefile --add-data="*.nii:." --add-data="neck_avatar.png:." --hidden-import="PIL._tkinter_finder" main.py
+
+pyinstaller --onefile --add-data="*.nii;." --add-data="neck_avatar.png;." --hidden-import="PIL._tkinter_finder" main.py
