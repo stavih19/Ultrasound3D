@@ -10,8 +10,9 @@ import nibabel as nib  # Add this import for handling .nii files
 import platform
 
 # Configuration
-development_mode = True  # Set to False for production
+development_mode = False  # Set to False for production
 default_file_path = "/home/hagai-stavi/Desktop/PythonProjects/VideoScrolling/IM_0003_mp4_volume.nii"  # Replace with a valid file path
+frame_width = 0.7
 
 
 class VideoPlayer:
@@ -37,18 +38,25 @@ class VideoPlayer:
         self.main_frame = tk.Frame(self.master)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.left_frame = tk.Frame(self.main_frame, width=self.window_width * 0.7, height=self.window_height)
+        self.left_frame = tk.Frame(self.main_frame, width=self.window_width * frame_width, height=self.window_height)
         self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.right_frame = tk.Frame(self.main_frame, width=self.window_width * 0.3, height=self.window_height)
+        self.right_frame = tk.Frame(self.main_frame, width=self.window_width * (1 - frame_width), height=self.window_height)
         self.right_frame.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Set up the canvas for the video frame
-        self.canvas = tk.Canvas(self.left_frame, width=int(self.window_width * 0.7), height=self.window_height - 200)
+        self.canvas = tk.Canvas(self.left_frame, width=int(self.window_width * frame_width), height=self.window_height - 200)
         self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Set up the vertical scrollbar for overlap adjustment
+        self.overlap_scrollbar = tk.Scale(self.right_frame, from_=-100, to=1, 
+                                          orient=tk.VERTICAL, label="Overlap", command=self.on_overlap_scroll)
+        self.overlap_scrollbar.set(1)  # Default overlap value
+        self.overlap_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.overlap_scrollbar.place(x=0, y=self.window_height - 150)
 
         # Set up the neck representation canvas
-        self.neck_canvas = tk.Canvas(self.right_frame, width=int(self.window_width * 0.3), height=self.window_height - 200)
+        self.neck_canvas = tk.Canvas(self.right_frame, width=int(self.window_width * (1 - frame_width)), height=self.window_height - 200)
         self.neck_canvas.pack(fill=tk.Y, pady=10)
 
         # Load the neck image or create a placeholder
@@ -84,8 +92,8 @@ class VideoPlayer:
         self.prev_button = tk.Button(self.button_frame, text="Backward", command=self.show_previous_frame)
         self.prev_button.pack(side=tk.LEFT, padx=10)
 
-        self.start_stop_button = tk.Button(self.button_frame, text="Start", command=self.toggle_playback)
-        self.start_stop_button.pack(side=tk.LEFT, padx=10)
+        # self.start_stop_button = tk.Button(self.button_frame, text="Start", command=self.toggle_playback)
+        # self.start_stop_button.pack(side=tk.LEFT, padx=10)
 
         self.next_button = tk.Button(self.button_frame, text="Forward", command=self.show_next_frame)
         self.next_button.pack(side=tk.RIGHT, padx=10)
@@ -105,6 +113,7 @@ class VideoPlayer:
         self.is_playing = False
         self.is_next_button_held = False
         self.is_prev_button_held = False
+        self.overlap = 0
 
         # Determine the file type and load the appropriate file
         _, ext = os.path.splitext(file_path)
@@ -163,7 +172,7 @@ class VideoPlayer:
         else:
             # Stop playback if the last frame is reached
             self.is_playing = False
-            self.start_stop_button.config(text="Start")  # Reset button to "Start"
+            # self.start_stop_button.config(text="Start")  # Reset button to "Start"
 
 
     def toggle_playback(self):
@@ -171,11 +180,11 @@ class VideoPlayer:
         if self.is_playing:
             # Stop playback
             self.is_playing = False
-            self.start_stop_button.config(text="Start")
+            # self.start_stop_button.config(text="Start")
         else:
             # Start playback
             self.is_playing = True
-            self.start_stop_button.config(text="Stop")
+            # self.start_stop_button.config(text="Stop")
             self.play_video()  # Begin the playback loop
 
 
@@ -190,7 +199,7 @@ class VideoPlayer:
         frame_index = int(float(value))
         self.show_frame(frame_index)
         self.is_playing = False
-        self.start_stop_button.config(text="Start")
+        # self.start_stop_button.config(text="Start")
 
     def on_next_button_press(self):
         """Handle the press event of the Next button."""
@@ -222,6 +231,7 @@ class VideoPlayer:
             self.neck_canvas.create_line(0, y_position, self.window_width * 0.3, y_position, fill="red", width=3, tags="line")
 
     def show_frame(self, frame_index):
+        scaleup = 1
         """Show the frame (or slice) at the specified index, centered on the canvas."""
         # Clear the canvas initially
         self.canvas.delete("all")
@@ -234,7 +244,7 @@ class VideoPlayer:
                 frame_width, frame_height = img.size
 
                 # Resize the frame (double the size)
-                new_width, new_height = frame_width * 2, frame_height * 2
+                new_width, new_height = frame_width * scaleup, frame_height * scaleup
                 img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             else:
                 # For video frames
@@ -250,24 +260,32 @@ class VideoPlayer:
                 img = Image.fromarray(frame_rgb)
 
                 # Resize again to double the size
-                new_width, new_height = frame_width * 2, frame_height * 2
+                new_width, new_height = frame_width * scaleup, frame_height * scaleup
                 img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             # Calculate the offsets to center the resized frame in the canvas
             canvas_width = self.canvas.winfo_width()
             canvas_height = self.canvas.winfo_height()
-            x_offset = max((canvas_width - new_width) // 2, 0)
+            x_offset = max((canvas_width - new_width) // 2, 0) - (new_width / 2) - self.overlap
+            x_offset2 = x_offset + new_width + (self.overlap * 2)
             y_offset = max((canvas_height - new_height) // 2, 0)
+            y_offset2 = max((canvas_height - new_height) // 2, 0)
 
             # Display the resized image
             self.current_frame_image = ImageTk.PhotoImage(image=img)
             self.canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=self.current_frame_image)
+            self.canvas.create_image(x_offset2, y_offset2, anchor=tk.NW, image=self.current_frame_image)
 
             # Update the current frame index and red line position
             self.current_frame_index = frame_index
             self.update_neck_representation(frame_index)
         else:
             print("Frame index out of range.")
+
+    def on_overlap_scroll(self, value):
+        """Handle overlap adjustment through the scrollbar."""
+        self.overlap = int(value)
+        self.show_frame(self.current_frame_index)
 
 
     def show_next_frame(self):
@@ -359,7 +377,7 @@ def main():
         VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii'))
         root.mainloop()
     else:
-        directory = get_downloads_path()
+        directory = os.path.abspath(os.getcwd())
         event_handler = DirectoryWatcher(directory)
         observer = Observer()
         observer.schedule(event_handler, directory, recursive=False)
