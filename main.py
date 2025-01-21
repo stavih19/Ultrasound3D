@@ -120,7 +120,7 @@ class VideoPlayer:
 
         # Determine the file type and load the appropriate file
         _, ext = os.path.splitext(file_path)
-        if ext.lower() == ".gz":
+        if ext.lower() == ".nii" or ext.lower() == ".gz":
             self.load_nii_file(file_path)
         else:
             self.load_video(file_path)
