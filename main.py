@@ -378,6 +378,7 @@ def main():
         root.mainloop()
     else:
         directory = os.path.abspath(os.getcwd())
+        directory = 'D:\\docker_test\\test'
         event_handler = DirectoryWatcher(directory)
         observer = Observer()
         observer.schedule(event_handler, directory, recursive=False)
@@ -391,4 +392,7 @@ def main():
 
 
 if __name__ == "__main__":
+    print("Watching on - D:\\'docker_test\\'test")
+    print("After cerate the file it will take a couple of seconds")
+    print("Waiting for .nii files to create there ...")
     main()
