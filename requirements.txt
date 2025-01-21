@@ -3,3 +3,4 @@ pillow
 watchdog
 nibabel
 pyinstaller
+python-dotenv

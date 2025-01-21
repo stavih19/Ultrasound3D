@@ -13,7 +13,7 @@ import shutil
 import tempfile
 
 # Configuration
-development_mode = True  # Set to False for production
+development_mode = False  # Set to False for production
 default_file_path = "/home/hagai-stavi/Desktop/PythonProjects/VideoScrolling/IM_0003_mp4_volume.nii"  # Replace with a valid file path
 frame_width = 0.7
 
@@ -399,14 +399,14 @@ def get_downloads_path():
         raise FileNotFoundError("Downloads directory not found.")
 
 
-def main():
+def main(directory_path):
     if development_mode:
         root = tk.Tk()
         VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'))
         root.mainloop()
     else:
-        directory = os.path.abspath(os.getcwd())
-        directory = 'D:\\docker_test\\test'
+        if(directory_path is None or '' or not os.path.isdir(directory_path)):
+            directory = os.path.abspath(os.getcwd())
         event_handler = DirectoryWatcher(directory)
         observer = Observer()
         observer.schedule(event_handler, directory, recursive=False)
@@ -420,7 +420,8 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Watching on - D:\\'docker_test\\'test")
+    directory = os.getenv('LISTENING_DIRECTORY', 'D:\\docker_test\\test')
+    print("Watching on - " + directory)
     print("After cerate the file it will take a couple of seconds")
     print("Waiting for .nii files to create there ...")
-    main()
+    main(directory)

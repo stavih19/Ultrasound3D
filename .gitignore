@@ -3,4 +3,5 @@
 /dist/main
 /dist
 *.nii
+*.gz
 main.spec
