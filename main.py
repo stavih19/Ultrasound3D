@@ -380,33 +380,20 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 
-def get_downloads_path():
-    """Get the full path of the Downloads folder based on the operating system."""
-    os_name = platform.system()
-
-    if os_name == "Windows":
-        downloads_path = os.path.join(os.getenv("USERPROFILE"), "Downloads")
-    elif os_name == "Darwin":  # macOS
-        downloads_path = os.path.join(os.getenv("HOME"), "Downloads")
-    elif os_name == "Linux":
-        downloads_path = os.path.join(os.getenv("HOME"), "Downloads")
+def get_dir_path(directory_path):
+    if(directory_path is None or '' or not os.path.isdir(directory_path)):
+        directory = os.path.abspath(os.getcwd())
     else:
-        raise OSError(f"Unsupported operating system: {os_name}")
-
-    if os.path.exists(downloads_path):
-        return downloads_path
-    else:
-        raise FileNotFoundError("Downloads directory not found.")
+        directory = directory_path
+    return directory
 
 
-def main(directory_path):
+def main(directory):
     if development_mode:
         root = tk.Tk()
         VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'))
         root.mainloop()
     else:
-        if(directory_path is None or '' or not os.path.isdir(directory_path)):
-            directory = os.path.abspath(os.getcwd())
         event_handler = DirectoryWatcher(directory)
         observer = Observer()
         observer.schedule(event_handler, directory, recursive=False)
@@ -418,9 +405,11 @@ def main(directory_path):
             observer.stop()
         observer.join()
 
-
+from dotenv import load_dotenv
 if __name__ == "__main__":
-    directory = os.getenv('LISTENING_DIRECTORY', 'D:\\docker_test\\test')
+    load_dotenv('.env')
+    env_directory = os.getenv('LISTENING_DIRECTORY', 'D:\\docker_test\\test')
+    directory = get_dir_path(env_directory)
     print("Watching on - " + directory)
     print("After cerate the file it will take a couple of seconds")
     print("Waiting for .nii files to create there ...")
