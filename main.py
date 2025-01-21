@@ -8,9 +8,12 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import nibabel as nib  # Add this import for handling .nii files
 import platform
+import gzip
+import shutil
+import tempfile
 
 # Configuration
-development_mode = False  # Set to False for production
+development_mode = True  # Set to False for production
 default_file_path = "/home/hagai-stavi/Desktop/PythonProjects/VideoScrolling/IM_0003_mp4_volume.nii"  # Replace with a valid file path
 frame_width = 0.7
 
@@ -117,7 +120,7 @@ class VideoPlayer:
 
         # Determine the file type and load the appropriate file
         _, ext = os.path.splitext(file_path)
-        if ext.lower() == ".nii":
+        if ext.lower() == ".gz":
             self.load_nii_file(file_path)
         else:
             self.load_video(file_path)
@@ -128,18 +131,41 @@ class VideoPlayer:
         return num
 
     def load_nii_file(self, file_path):
-        """Load a .nii file and extract slices."""
+        """Load a .nii or .nii.gz file and extract slices."""
         try:
+            # Handle .nii.gz files
+            if file_path.endswith(".gz"):
+                print(f"Decompressing {file_path}...")
+                # Create a temporary file to store the decompressed data
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".nii")
+                with gzip.open(file_path, 'rb') as gz_file:
+                    with open(temp_file.name, 'wb') as temp_out:
+                        shutil.copyfileobj(gz_file, temp_out)
+                file_path = temp_file.name  # Update the file path to the decompressed file
+                print(f"Decompressed to {file_path}")
+
+            # Load the decompressed or regular .nii file
             nii_image = nib.load(file_path)
             nii_data = nii_image.get_fdata()
             self.slices = [nii_data[:, :, i] for i in range(nii_data.shape[2])]
             self.total_frames = len(self.slices)
             self.current_frame_index = 0
-            self.slices = [(slice_ - slice_.min()) / self.prevent_zero(slice_.max() - slice_.min()) * 255 for slice_ in self.slices]
+
+            # Normalize pixel values for visualization
+            self.slices = [
+                (slice_ - slice_.min()) / self.prevent_zero(slice_.max() - slice_.min()) * 255
+                for slice_ in self.slices
+            ]
             self.scrollbar.config(to=self.total_frames - 1)
             self.show_frame(0)
+
+            # Clean up temporary file if it was created
+            if file_path.endswith(".nii") and "temp_file" in locals():
+                os.unlink(temp_file.name)
+
         except Exception as e:
-            print(f"Error loading .nii file: {e}")
+            print(f"Error loading .nii or .nii.gz file: {e}")
+
 
     def load_video(self, video_path):
         """Load a video file and initialize frame navigation."""
@@ -320,16 +346,18 @@ class DirectoryWatcher(FileSystemEventHandler):
         except IOError:
             return False
 
+
     def on_created(self, event):
         if event.is_directory:
             return
         _, ext = os.path.splitext(event.src_path)
-        if ext.lower() in [".mp4", ".avi", ".mov", ".mkv", ".nii"]:
+        if ext.lower() in [".nii", ".gz"]:  # Include .nii.gz
             for _ in range(10):
                 if self.is_file_ready(event.src_path):
                     self.show_file(event.src_path)
                     return
                 time.sleep(1)
+
 
     def show_file(self, file_path):
         if not self.tk_instance:
@@ -338,7 +366,7 @@ class DirectoryWatcher(FileSystemEventHandler):
             self.tk_instance.mainloop()
         else:
             _, ext = os.path.splitext(file_path)
-            if ext.lower() == ".nii":
+            if ext.lower() == ".gz":
                 self.video_player.load_nii_file(file_path)
             else:
                 self.video_player.load_video(file_path)
@@ -374,7 +402,7 @@ def get_downloads_path():
 def main():
     if development_mode:
         root = tk.Tk()
-        VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii'))
+        VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'))
         root.mainloop()
     else:
         directory = os.path.abspath(os.getcwd())
