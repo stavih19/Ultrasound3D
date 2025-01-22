@@ -1,3 +1,6 @@
+import threading
+from queue import Queue
+from threading import Thread
 import cv2
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -28,11 +31,9 @@ class VideoPlayer:
         screen_height = self.master.winfo_screenheight()
         self.window_width = int(screen_width * 0.5)
         self.window_height = int(screen_height * 0.5)
-
         # Calculate position to center the window
         x_position = (screen_width - self.window_width) // 2
         y_position = (screen_height - self.window_height) // 2
-
         # Configure the window size
         self.master.geometry(f"{self.window_width}x{self.window_height}+{x_position}+{y_position}")
         self.master.title("Video Frame Viewer")
@@ -40,17 +41,15 @@ class VideoPlayer:
         # Create main layout frames
         self.main_frame = tk.Frame(self.master)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
-
         self.left_frame = tk.Frame(self.main_frame, width=self.window_width * frame_width, height=self.window_height)
         self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
         self.right_frame = tk.Frame(self.main_frame, width=self.window_width * (1 - frame_width), height=self.window_height)
-        self.right_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
         # Set up the canvas for the video frame
         self.canvas = tk.Canvas(self.left_frame, width=int(self.window_width * frame_width), height=self.window_height - 200)
         self.canvas.pack(fill=tk.BOTH, expand=True)
-        
+
         # Set up the vertical scrollbar for overlap adjustment
         self.overlap_scrollbar = tk.Scale(self.right_frame, from_=-100, to=1, 
                                           orient=tk.VERTICAL, label="Overlap", command=self.on_overlap_scroll)
@@ -110,7 +109,8 @@ class VideoPlayer:
 
         # Playback and file properties
         self.video = None
-        self.slices = None
+        self.first_slices = None
+        self.second_slices = None
         self.current_frame_index = 0
         self.total_frames = 0
         self.is_playing = False
@@ -119,9 +119,13 @@ class VideoPlayer:
         self.overlap = 0
 
         # Determine the file type and load the appropriate file
+        self.load_img(file_path, True)
+
+    def load_img(self, file_path, is_first):
+        # Determine the file type and load the appropriate file
         _, ext = os.path.splitext(file_path)
         if ext.lower() == ".nii" or ext.lower() == ".gz":
-            self.load_nii_file(file_path)
+            self.load_nii_file(file_path, is_first)
         else:
             self.load_video(file_path)
 
@@ -130,7 +134,7 @@ class VideoPlayer:
             return 0.0001
         return num
 
-    def load_nii_file(self, file_path):
+    def load_nii_file(self, file_path, is_first):
         """Load a .nii or .nii.gz file and extract slices."""
         try:
             # Handle .nii.gz files
@@ -147,17 +151,27 @@ class VideoPlayer:
             # Load the decompressed or regular .nii file
             nii_image = nib.load(file_path)
             nii_data = nii_image.get_fdata()
-            self.slices = [nii_data[:, :, i] for i in range(nii_data.shape[2])]
-            self.total_frames = len(self.slices)
-            self.current_frame_index = 0
+            if is_first:
+                self.first_slices = [nii_data[:, :, i] for i in range(nii_data.shape[2])]
+                self.total_frames = len(self.first_slices)
+                self.current_frame_index = 0
 
-            # Normalize pixel values for visualization
-            self.slices = [
-                (slice_ - slice_.min()) / self.prevent_zero(slice_.max() - slice_.min()) * 255
-                for slice_ in self.slices
-            ]
+                # Normalize pixel values for visualization
+                self.first_slices = [
+                    (slice_ - slice_.min()) / self.prevent_zero(slice_.max() - slice_.min()) * 255
+                    for slice_ in self.first_slices
+                ]
+            else:
+                self.second_slices = [nii_data[:, :, i] for i in range(nii_data.shape[2])]
+                self.total_frames = len(self.second_slices)
+
+                # Normalize pixel values for visualization
+                self.second_slices = [
+                    (slice_ - slice_.min()) / self.prevent_zero(slice_.max() - slice_.min()) * 255
+                    for slice_ in self.second_slices
+                ]
             self.scrollbar.config(to=self.total_frames - 1)
-            self.show_frame(0)
+            self.show_frame(self.current_frame_index)
 
             # Clean up temporary file if it was created
             if file_path.endswith(".nii") and "temp_file" in locals():
@@ -181,7 +195,7 @@ class VideoPlayer:
         self.delay = int(1000 / self.fps)
         self.total_frames = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
         self.scrollbar.config(to=self.total_frames - 1)
-        self.show_frame(0)
+        self.show_frame(self.current_frame_index)
 
     def play_video(self):
         """Play video frames sequentially."""
@@ -217,13 +231,13 @@ class VideoPlayer:
     def center_first_frame(self):
         """Center the first frame after the canvas dimensions are initialized."""
         self.canvas.update_idletasks()  # Ensure the canvas has updated dimensions
-        self.show_frame(0)  # Display the first frame centered
+        self.show_frame(self.current_frame_index)  # Display the first frame centered
 
 
     def on_scroll(self, value):
         """Handle scrollbar movement."""
-        frame_index = int(float(value))
-        self.show_frame(frame_index)
+        self.current_frame_index = int(float(value))
+        self.show_frame(self.current_frame_index)
         self.is_playing = False
         # self.start_stop_button.config(text="Start")
 
@@ -263,31 +277,42 @@ class VideoPlayer:
         self.canvas.delete("all")
 
         if 0 <= frame_index < self.total_frames:
-            if hasattr(self, 'slices'):
+            # if hasattr(self, 'first_slices'):
+            if self.first_slices is not None:
                 # For .nii slices
-                slice_ = self.slices[frame_index]
-                img = Image.fromarray(slice_.astype('uint8')).convert('L')
-                frame_width, frame_height = img.size
+                first_slice_ = self.first_slices[frame_index]
+                first_img = Image.fromarray(first_slice_.astype('uint8')).convert('L')
+                frame_width, frame_height = first_img.size
 
                 # Resize the frame (double the size)
                 new_width, new_height = frame_width * scaleup, frame_height * scaleup
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            else:
-                # For video frames
-                self.video.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-                ret, frame = self.video.read()
-                if not ret:
-                    print(f"Failed to read frame at index {frame_index}.")
-                    return
+                first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # if hasattr(self, 'second_slices'):
+            if self.second_slices is not None:
+                # For .nii slices
+                second_slices_ = self.second_slices[frame_index]
+                second_img = Image.fromarray(second_slices_.astype('uint8')).convert('L')
+                frame_width, frame_height = second_img.size
 
-                # Resize the frame
-                frame_resized, frame_width, frame_height = self.resize_frame(frame)
-                frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(frame_rgb)
-
-                # Resize again to double the size
+                # Resize the frame (double the size)
                 new_width, new_height = frame_width * scaleup, frame_height * scaleup
-                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                second_img = second_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # else:
+            #     # For video frames
+            #     self.video.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
+            #     ret, frame = self.video.read()
+            #     if not ret:
+            #         print(f"Failed to read frame at index {frame_index}.")
+            #         return
+
+            #     # Resize the frame
+            #     frame_resized, frame_width, frame_height = self.resize_frame(frame)
+            #     frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+            #     first_img = Image.fromarray(frame_rgb)
+
+            #     # Resize again to double the size
+            #     new_width, new_height = frame_width * scaleup, frame_height * scaleup
+            #     first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             # Calculate the offsets to center the resized frame in the canvas
             canvas_width = self.canvas.winfo_width()
@@ -298,9 +323,12 @@ class VideoPlayer:
             y_offset2 = max((canvas_height - new_height) // 2, 0)
 
             # Display the resized image
-            self.current_frame_image = ImageTk.PhotoImage(image=img)
-            self.canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=self.current_frame_image)
-            self.canvas.create_image(x_offset2, y_offset2, anchor=tk.NW, image=self.current_frame_image)
+            self.current_first_frame_image = ImageTk.PhotoImage(image=first_img)
+            self.canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=self.current_first_frame_image)
+
+            if self.second_slices is not None:
+                self.current_second_frame_image = ImageTk.PhotoImage(image=second_img)
+                self.canvas.create_image(x_offset2, y_offset2, anchor=tk.NW, image=self.current_second_frame_image)
 
             # Update the current frame index and red line position
             self.current_frame_index = frame_index
@@ -334,10 +362,12 @@ class VideoPlayer:
 
 
 class DirectoryWatcher(FileSystemEventHandler):
-    def __init__(self, directory):
+    def __init__(self, directory, tk_instance):
         self.directory = directory
-        self.tk_instance = None
+        self.tk_instance = tk_instance
         self.video_player = None
+        self.task_queue = Queue()
+        self.first_time = True
 
     def is_file_ready(self, file_path):
         try:
@@ -354,22 +384,31 @@ class DirectoryWatcher(FileSystemEventHandler):
         if ext.lower() in [".nii", ".gz"]:  # Include .nii.gz
             for _ in range(10):
                 if self.is_file_ready(event.src_path):
-                    self.show_file(event.src_path)
+                    self.task_queue.put(event.src_path)
                     return
                 time.sleep(1)
 
+    def process_tasks(self):
+        """Process tasks from the queue in the Tkinter thread."""
+        while not self.task_queue.empty():
+            file_path = self.task_queue.get()
+            print(f"Processing file: {file_path}")
+            if not self.video_player:
+                self.video_player = VideoPlayer(self.tk_instance, file_path)
+                self.tk_instance.deiconify()
+            else:
+                self.video_player.load_img(file_path, False)
+
+        self.tk_instance.after(100, self.process_tasks)
 
     def show_file(self, file_path):
+        print(self.tk_instance)
         if not self.tk_instance:
             self.tk_instance = tk.Tk()
             self.video_player = VideoPlayer(self.tk_instance, file_path)
             self.tk_instance.mainloop()
         else:
-            _, ext = os.path.splitext(file_path)
-            if ext.lower() == ".gz":
-                self.video_player.load_nii_file(file_path)
-            else:
-                self.video_player.load_video(file_path)
+            self.video_player.load_img(file_path, False)
 
 
 def resource_path(relative_path):
@@ -394,16 +433,25 @@ def main(directory):
         VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'))
         root.mainloop()
     else:
-        event_handler = DirectoryWatcher(directory)
+        root = tk.Tk()
+        root.withdraw()
+        watcher = DirectoryWatcher(directory, root)
+
         observer = Observer()
-        observer.schedule(event_handler, directory, recursive=False)
-        observer.start()
+        observer.schedule(watcher, directory, recursive=False)
+
+        watcher_thread = threading.Thread(target=observer.start)
+        watcher_thread.daemon = True
+        watcher_thread.start()
+
+        root.after(100, watcher.process_tasks)
         try:
-            while True:
-                time.sleep(1)
+            root.mainloop()
         except KeyboardInterrupt:
             observer.stop()
         observer.join()
+
+
 
 from dotenv import load_dotenv
 if __name__ == "__main__":
