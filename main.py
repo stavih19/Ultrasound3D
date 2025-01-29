@@ -21,6 +21,11 @@ frame_width = 0.72
 control_x_location_bias = 0
 control_y_location_bias = -45
 
+def draw_left_image(self):
+    self.load_img(self.file_path, True)
+
+def draw_right_image(self):
+        self.load_img(self.file_path_2, False)
 
 class VideoPlayer:
     def __init__(self, master, file_path, file_path_2):
@@ -144,6 +149,8 @@ class VideoPlayer:
 
         # Playback and file properties
         self.video = None
+        self.first_img = None
+        self.second_img = None
         self.first_slices = None
         self.second_slices = None
         self.frame_diff = 0
@@ -156,11 +163,16 @@ class VideoPlayer:
         self.overlap = 0
         self.y_offset2 = 0
         self.scaleup = 1
+        self.file_path = file_path
+        self.file_path_2 = file_path_2
+        self.image_id_on_top = 0
+        self.left_image_ids = { 'image': 0, 'rectangle': 0}
+        self.right_image_ids = { 'image': 0, 'rectangle': 0}
 
         # Determine the file type and load the appropriate file
-        self.load_img(file_path, True)
+        draw_left_image(self)
         if file_path_2 != "":
-            self.load_img(file_path_2, False)
+            draw_right_image(self)
     
     def rotate_frame(self):
         """Rotate the current frame by 90 degrees clockwise."""
@@ -332,29 +344,29 @@ class VideoPlayer:
             if self.first_slices is not None:
                 # For .nii slices
                 first_slice_ = self.first_slices[frame_index]
-                first_img = Image.fromarray(first_slice_.astype('uint8')).convert('L')
+                self.first_img = Image.fromarray(first_slice_.astype('uint8')).convert('L')
 
                 # Apply rotation if needed
                 if self.current_rotation != 0:
-                    first_img = first_img.rotate(self.current_rotation, expand=True)
+                    self.first_img = self.first_img.rotate(self.current_rotation, expand=True)
                 
-                frame_width, frame_height = first_img.size
+                frame_width, frame_height = self.first_img.size
                 # Resize the frame (double the size)
                 new_width, new_height = int(frame_width * self.scaleup), int(frame_height * self.scaleup)
-                first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                self.first_img = self.first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             if self.second_slices is not None:
                 # For .nii slices
                 second_slices_ = self.second_slices[right_frame_index]
-                second_img = Image.fromarray(second_slices_.astype('uint8')).convert('L')
+                self.second_img = Image.fromarray(second_slices_.astype('uint8')).convert('L')
 
                 # Apply rotation if needed
                 if self.current_rotation != 0:
-                    second_img = second_img.rotate(self.current_rotation, expand=True)
+                    self.second_img = self.second_img.rotate(self.current_rotation, expand=True)
 
-                frame_width, frame_height = second_img.size
+                frame_width, frame_height = self.second_img.size
                 # Resize the frame (double the size)
                 new_width, new_height = int(frame_width * self.scaleup), int(frame_height * self.scaleup)
-                second_img = second_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                self.second_img = self.second_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
             
             # Calculate the offsets to center the resized frame in the canvas
             canvas_width = self.canvas.winfo_width()
@@ -364,19 +376,58 @@ class VideoPlayer:
             y_offset = max((canvas_height - new_height) // 2, 0)
             y_offset2 = max((canvas_height - new_height) // 2, 0) + self.y_offset2
 
-            # Display the resized image
-            self.current_first_frame_image = ImageTk.PhotoImage(image=first_img)
-            self.canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=self.current_first_frame_image)
+            # Define the border thickness
+            border_thickness = 5
+            local_overlap = 2
+            # Draw a blue border rectangle
+            self.left_image_ids['rectangle'] = self.canvas.create_rectangle(
+                x_offset - border_thickness + local_overlap, 
+                y_offset - border_thickness + local_overlap,
+                x_offset + new_width + border_thickness - (local_overlap * 2), 
+                y_offset + new_height + border_thickness - (local_overlap * 2),
+                outline="blue", width=border_thickness
+            )
+
+            self.current_first_frame_image = ImageTk.PhotoImage(image=self.first_img)
+            self.left_image_ids['image'] = self.canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=self.current_first_frame_image)
+            self.canvas.tag_bind(self.left_image_ids['image'], "<Button-1>", lambda event: self.on_image_click("left"))
 
             if self.second_slices is not None:
-                self.current_second_frame_image = ImageTk.PhotoImage(image=second_img)
-                self.canvas.create_image(x_offset2, y_offset2, anchor=tk.NW, image=self.current_second_frame_image)
+                # Define the border thickness
+                border_thickness = 5
+                local_overlap = 2
+                # Draw a blue border rectangle
+                self.right_image_ids['rectangle'] = self.canvas.create_rectangle(
+                    x_offset2 - border_thickness + local_overlap, 
+                    y_offset2 - border_thickness + local_overlap,
+                    x_offset2 + new_width + border_thickness - (local_overlap * 2), 
+                    y_offset2 + new_height + border_thickness - (local_overlap * 2),
+                    outline="red", width=border_thickness
+                )
+
+                self.current_second_frame_image = ImageTk.PhotoImage(image=self.second_img)
+                self.right_image_ids['image'] = self.canvas.create_image(x_offset2, y_offset2, anchor=tk.NW, image=self.current_second_frame_image)
+                self.canvas.tag_bind(self.right_image_ids['image'], "<Button-1>", lambda event: self.on_image_click("right"))
+
+            self.image_raise()
 
             # Update the current frame index and red line position
             self.current_frame_index = frame_index
             self.update_neck_representation(frame_index)
         else:
             print("Frame index out of range.")
+
+    def on_image_click(self, image_name):
+        self.image_id_on_top = image_name
+        self.image_raise()
+
+    def image_raise(self):
+        if self.image_id_on_top == "left":
+            self.canvas.tag_raise(self.left_image_ids['image'])
+            self.canvas.tag_raise(self.left_image_ids['rectangle'])
+        if self.image_id_on_top == "right":
+            self.canvas.tag_raise(self.right_image_ids['image'])
+            self.canvas.tag_raise(self.right_image_ids['rectangle'])
 
     def on_z_coordinate_scroll(self, value):
         """Handle overlap adjustment through the scrollbar."""
