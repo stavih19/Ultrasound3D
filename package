@@ -1,8 +1,10 @@
 Linux: pyinstaller --onefile --add-data="*.nii:." --add-data="neck_avatar.png:." --hidden-import="PIL._tkinter_finder" --name start main.py
-       python3 -m venv myenv
+       python3 -m venv env1
        source env1/bin/activate
 
 
 Windows: pyinstaller --onefile --add-data="*.nii;." --add-data="*.nii.gz;." --add-data="neck_avatar.png;." --hidden-import="PIL._tkinter_finder" --name start main.py
-         python -m venv myenv
+         python -m venv env1
          env1\Scripts\activate
+
+pip install -r requirements.txt
