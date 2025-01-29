@@ -164,12 +164,12 @@ class VideoPlayer:
     
     def rotate_frame(self):
         """Rotate the current frame by 90 degrees clockwise."""
-        if self.second_slices:
-            # Update the rotation angle (0, 90, 180, 270)
-            self.current_rotation = (self.current_rotation + 90) % 360
+        # if self.second_slices:
+        # Update the rotation angle (0, 90, 180, 270)
+        self.current_rotation = (self.current_rotation + 90) % 360
 
-            # Redisplay the current frame with the updated rotation
-            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
+        # Redisplay the current frame with the updated rotation
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
     def load_img(self, file_path, is_first):
         # Determine the file type and load the appropriate file
@@ -333,8 +333,12 @@ class VideoPlayer:
                 # For .nii slices
                 first_slice_ = self.first_slices[frame_index]
                 first_img = Image.fromarray(first_slice_.astype('uint8')).convert('L')
-                frame_width, frame_height = first_img.size
 
+                # Apply rotation if needed
+                if self.current_rotation != 0:
+                    first_img = first_img.rotate(self.current_rotation, expand=True)
+                
+                frame_width, frame_height = first_img.size
                 # Resize the frame (double the size)
                 new_width, new_height = int(frame_width * self.scaleup), int(frame_height * self.scaleup)
                 first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
