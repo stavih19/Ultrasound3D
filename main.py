@@ -17,16 +17,17 @@ import tempfile
 
 # Configuration
 development_mode = False  # Set to False for production
-default_file_path = "/home/hagai-stavi/Desktop/PythonProjects/VideoScrolling/IM_0003_mp4_volume.nii"  # Replace with a valid file path
-frame_width = 0.7
+frame_width = 0.72
+control_x_location_bias = 0
+control_y_location_bias = -45
 
 
 class VideoPlayer:
-    def __init__(self, master, file_path):
+    def __init__(self, master, file_path, file_path_2):
         self.master = master
         self.master.after(100, self.center_first_frame)  # Delay to ensure canvas dimensions are available
 
-        # Get 80% of the screen size
+        # Get 50% of the screen size
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
         self.window_width = int(screen_width * 0.5)
@@ -50,12 +51,49 @@ class VideoPlayer:
         self.canvas = tk.Canvas(self.left_frame, width=int(self.window_width * frame_width), height=self.window_height - 200)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
+        # Add the rotation button
+        self.rotate_button = tk.Button(self.right_frame, text="Rotate 90°", command=self.rotate_frame, width=10, height=1)
+        self.rotate_button.pack(pady=10)
+        self.rotate_button.place(x=130 + control_x_location_bias, y=self.window_height - 130 + control_y_location_bias)
+        self.current_rotation = 0
+
+        # Add resize buttons to the button frame
+        self.increase_button = tk.Button(self.right_frame, text="+10%", command=self.increase_frame, width=2, height=1)
+        self.increase_button.pack(side=tk.RIGHT, padx=10)
+        self.increase_button.place(x=195 + control_x_location_bias, y=self.window_height - 80 + control_y_location_bias)
+
+        # Add resize buttons to the button frame
+        self.decrease_button = tk.Button(self.right_frame, text="-10%", command=self.decrease_frame, width=2, height=1)
+        self.decrease_button.pack(side=tk.RIGHT, padx=10)
+        self.decrease_button.place(x=130 + control_x_location_bias, y=self.window_height - 80 + control_y_location_bias)
+
+        # Set up the vertical scrollbar for right frame y coordinate adjustment
+        self.right_frame_y_scrollbar = tk.Scale(self.right_frame, from_=-70, to=70, 
+                                          orient=tk.VERTICAL, label="Y+-", command=self.on_y_coordinate_scroll)
+        self.right_frame_y_scrollbar.set(0)  # Default overlap value
+        self.right_frame_y_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.right_frame_y_scrollbar.place(x=50 + control_x_location_bias, y=self.window_height - 140 + control_y_location_bias)
+
         # Set up the vertical scrollbar for overlap adjustment
-        self.overlap_scrollbar = tk.Scale(self.right_frame, from_=-100, to=1, 
-                                          orient=tk.VERTICAL, label="Overlap", command=self.on_overlap_scroll)
+        self.overlap_scrollbar = tk.Scale(self.right_frame, from_=-50, to=50, 
+                                          orient=tk.VERTICAL, label="X+-", command=self.on_overlap_scroll)
         self.overlap_scrollbar.set(1)  # Default overlap value
         self.overlap_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.overlap_scrollbar.place(x=0, y=self.window_height - 150)
+        self.overlap_scrollbar.place(x=0 + control_x_location_bias, y=self.window_height - 140 + control_y_location_bias)
+
+        # Set up the Horizontal scrollbar for Z coordinate
+        self.z_label = tk.Label(self.right_frame, text="Z+-", font=("Arial", 10))
+        self.z_label.place(x=220 + control_x_location_bias, y=self.window_height - 17 + control_y_location_bias)  # Adjust X, Y position
+        self.z_diff_scrollbar = tk.Scale(self.right_frame, from_=-10, to=100, 
+                                          orient=tk.HORIZONTAL, command=self.on_z_coordinate_scroll, length=180)
+        self.z_diff_scrollbar.set(0)  # Default overlap value
+        self.z_diff_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.z_diff_scrollbar.place(x=30 + control_x_location_bias, y=self.window_height - 37 + control_y_location_bias)
+
+        # Add reset configuration to the button frame
+        self.decrease_button = tk.Button(self.right_frame, text="reset", command=self.reset_config, width=2, height=1)
+        self.decrease_button.pack(side=tk.RIGHT, padx=10)
+        self.decrease_button.place(x=100 + control_x_location_bias, y=self.window_height - - 10 + control_y_location_bias)
 
         # Set up the neck representation canvas
         self.neck_canvas = tk.Canvas(self.right_frame, width=int(self.window_width * (1 - frame_width)), height=self.window_height - 200)
@@ -94,37 +132,51 @@ class VideoPlayer:
         self.prev_button = tk.Button(self.button_frame, text="Backward", command=self.show_previous_frame)
         self.prev_button.pack(side=tk.LEFT, padx=10)
 
-        # self.start_stop_button = tk.Button(self.button_frame, text="Start", command=self.toggle_playback)
-        # self.start_stop_button.pack(side=tk.LEFT, padx=10)
-
         self.next_button = tk.Button(self.button_frame, text="Forward", command=self.show_next_frame)
         self.next_button.pack(side=tk.RIGHT, padx=10)
 
         # Add bindings for button press and release events
-        self.next_button.bind("<ButtonPress>", lambda event: self.on_next_button_press())
-        self.next_button.bind("<ButtonRelease>", lambda event: self.on_next_button_release())
-
         self.prev_button.bind("<ButtonPress>", lambda event: self.on_prev_button_press())
         self.prev_button.bind("<ButtonRelease>", lambda event: self.on_prev_button_release())
+
+        self.next_button.bind("<ButtonPress>", lambda event: self.on_next_button_press())
+        self.next_button.bind("<ButtonRelease>", lambda event: self.on_next_button_release())
 
         # Playback and file properties
         self.video = None
         self.first_slices = None
         self.second_slices = None
+        self.frame_diff = 0
         self.current_frame_index = 0
+        self.current_frame_right_frame = self.current_frame_index + self.frame_diff
         self.total_frames = 0
         self.is_playing = False
         self.is_next_button_held = False
         self.is_prev_button_held = False
         self.overlap = 0
+        self.y_offset2 = 0
+        self.scaleup = 1
 
         # Determine the file type and load the appropriate file
         self.load_img(file_path, True)
+        if file_path_2 is not "":
+            self.load_img(file_path_2, False)
+    
+    def rotate_frame(self):
+        """Rotate the current frame by 90 degrees clockwise."""
+        if self.second_slices:
+            # Update the rotation angle (0, 90, 180, 270)
+            self.current_rotation = (self.current_rotation + 90) % 360
+
+            # Redisplay the current frame with the updated rotation
+            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
     def load_img(self, file_path, is_first):
         # Determine the file type and load the appropriate file
-        _, ext = os.path.splitext(file_path)
-        if ext.lower() == ".nii" or ext.lower() == ".gz":
+        file_name, ext = os.path.splitext(file_path)
+        if "seg" in file_name.lower():
+            print("Doesn't upload 'seg' files")
+        elif (ext.lower() == ".nii" or ext.lower() == ".gz") and ("seg" not in file_name.lower()):
             self.load_nii_file(file_path, is_first)
         else:
             self.load_video(file_path)
@@ -138,7 +190,7 @@ class VideoPlayer:
         """Load a .nii or .nii.gz file and extract slices."""
         try:
             # Handle .nii.gz files
-            if file_path.endswith(".gz"):
+            if file_path.endswith(".gz") and ("seg" not in file_path.lower()):
                 print(f"Decompressing {file_path}...")
                 # Create a temporary file to store the decompressed data
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".nii")
@@ -171,7 +223,7 @@ class VideoPlayer:
                     for slice_ in self.second_slices
                 ]
             self.scrollbar.config(to=self.total_frames - 1)
-            self.show_frame(self.current_frame_index)
+            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
             # Clean up temporary file if it was created
             if file_path.endswith(".nii") and "temp_file" in locals():
@@ -195,7 +247,7 @@ class VideoPlayer:
         self.delay = int(1000 / self.fps)
         self.total_frames = int(self.video.get(cv2.CAP_PROP_FRAME_COUNT))
         self.scrollbar.config(to=self.total_frames - 1)
-        self.show_frame(self.current_frame_index)
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
     def play_video(self):
         """Play video frames sequentially."""
@@ -204,7 +256,7 @@ class VideoPlayer:
 
         if self.current_frame_index + 1 < self.total_frames:
             self.current_frame_index += 1
-            self.show_frame(self.current_frame_index)
+            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
             self.scrollbar.set(self.current_frame_index)  # Sync the scrollbar with the frame index
 
             # Schedule the next frame update after 0.1 seconds
@@ -231,13 +283,14 @@ class VideoPlayer:
     def center_first_frame(self):
         """Center the first frame after the canvas dimensions are initialized."""
         self.canvas.update_idletasks()  # Ensure the canvas has updated dimensions
-        self.show_frame(self.current_frame_index)  # Display the first frame centered
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)  # Display the first frame centered
 
 
     def on_scroll(self, value):
         """Handle scrollbar movement."""
         self.current_frame_index = int(float(value))
-        self.show_frame(self.current_frame_index)
+        self.current_frame_right_frame = self.current_frame_index + self.frame_diff
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
         self.is_playing = False
         # self.start_stop_button.config(text="Start")
 
@@ -270,14 +323,12 @@ class VideoPlayer:
             self.neck_canvas.delete("line")
             self.neck_canvas.create_line(0, y_position, self.window_width * 0.3, y_position, fill="red", width=3, tags="line")
 
-    def show_frame(self, frame_index):
-        scaleup = 1
+    def show_frame(self, frame_index, right_frame_index):
         """Show the frame (or slice) at the specified index, centered on the canvas."""
         # Clear the canvas initially
         self.canvas.delete("all")
 
-        if 0 <= frame_index < self.total_frames:
-            # if hasattr(self, 'first_slices'):
+        if 0 <= frame_index < self.total_frames and 0 <= right_frame_index < self.total_frames:
             if self.first_slices is not None:
                 # For .nii slices
                 first_slice_ = self.first_slices[frame_index]
@@ -285,42 +336,29 @@ class VideoPlayer:
                 frame_width, frame_height = first_img.size
 
                 # Resize the frame (double the size)
-                new_width, new_height = frame_width * scaleup, frame_height * scaleup
+                new_width, new_height = int(frame_width * self.scaleup), int(frame_height * self.scaleup)
                 first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            # if hasattr(self, 'second_slices'):
             if self.second_slices is not None:
                 # For .nii slices
-                second_slices_ = self.second_slices[frame_index]
+                second_slices_ = self.second_slices[right_frame_index]
                 second_img = Image.fromarray(second_slices_.astype('uint8')).convert('L')
+
+                # Apply rotation if needed
+                if self.current_rotation != 0:
+                    second_img = second_img.rotate(self.current_rotation, expand=True)
+
                 frame_width, frame_height = second_img.size
-
                 # Resize the frame (double the size)
-                new_width, new_height = frame_width * scaleup, frame_height * scaleup
+                new_width, new_height = int(frame_width * self.scaleup), int(frame_height * self.scaleup)
                 second_img = second_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            # else:
-            #     # For video frames
-            #     self.video.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-            #     ret, frame = self.video.read()
-            #     if not ret:
-            #         print(f"Failed to read frame at index {frame_index}.")
-            #         return
-
-            #     # Resize the frame
-            #     frame_resized, frame_width, frame_height = self.resize_frame(frame)
-            #     frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-            #     first_img = Image.fromarray(frame_rgb)
-
-            #     # Resize again to double the size
-            #     new_width, new_height = frame_width * scaleup, frame_height * scaleup
-            #     first_img = first_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
+            
             # Calculate the offsets to center the resized frame in the canvas
             canvas_width = self.canvas.winfo_width()
             canvas_height = self.canvas.winfo_height()
             x_offset = max((canvas_width - new_width) // 2, 0) - (new_width / 2) - self.overlap
             x_offset2 = x_offset + new_width + (self.overlap * 2)
             y_offset = max((canvas_height - new_height) // 2, 0)
-            y_offset2 = max((canvas_height - new_height) // 2, 0)
+            y_offset2 = max((canvas_height - new_height) // 2, 0) + self.y_offset2
 
             # Display the resized image
             self.current_first_frame_image = ImageTk.PhotoImage(image=first_img)
@@ -336,17 +374,35 @@ class VideoPlayer:
         else:
             print("Frame index out of range.")
 
+    def on_z_coordinate_scroll(self, value):
+        """Handle overlap adjustment through the scrollbar."""
+        self.frame_diff = int(value)
+        self.current_frame_right_frame = self.current_frame_index + self.frame_diff
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
+
+    def reset_config(self):
+        self.overlap_scrollbar.set(1)
+        self.right_frame_y_scrollbar.set(0)
+        self.z_diff_scrollbar.set(0)
+        self.scaleup = 1
+        self.current_rotation = 0
+
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
+
     def on_overlap_scroll(self, value):
         """Handle overlap adjustment through the scrollbar."""
         self.overlap = int(value)
-        self.show_frame(self.current_frame_index)
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
+    def on_y_coordinate_scroll(self, value):
+        self.y_offset2 = int(value)
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
     def show_next_frame(self):
         """Show the next frame."""
         if self.current_frame_index + 1 < self.total_frames:
             self.current_frame_index += 1
-            self.show_frame(self.current_frame_index)
+            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
             self.scrollbar.set(self.current_frame_index)
         if self.is_next_button_held:
             self.master.after(10, self.show_next_frame)
@@ -355,10 +411,18 @@ class VideoPlayer:
         """Show the previous frame."""
         if self.current_frame_index > 0:
             self.current_frame_index -= 1
-            self.show_frame(self.current_frame_index)
+            self.show_frame(self.current_frame_index, self.current_frame_right_frame)
             self.scrollbar.set(self.current_frame_index)
         if self.is_prev_button_held:
             self.master.after(10, self.show_previous_frame)
+
+    def increase_frame(self):
+        self.scaleup += 0.1
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
+
+    def decrease_frame(self):
+        self.scaleup -= 0.1
+        self.show_frame(self.current_frame_index, self.current_frame_right_frame)
 
 
 class DirectoryWatcher(FileSystemEventHandler):
@@ -380,8 +444,10 @@ class DirectoryWatcher(FileSystemEventHandler):
     def on_created(self, event):
         if event.is_directory:
             return
-        _, ext = os.path.splitext(event.src_path)
-        if ext.lower() in [".nii", ".gz"]:  # Include .nii.gz
+        file_name, ext = os.path.splitext(event.src_path)
+        if "seg" in file_name.lower():
+            print("Doesn't upload 'seg' files")
+        elif ext.lower() in [".nii", ".gz"]:  # Include .nii.gz
             for _ in range(10):
                 if self.is_file_ready(event.src_path):
                     self.task_queue.put(event.src_path)
@@ -394,21 +460,12 @@ class DirectoryWatcher(FileSystemEventHandler):
             file_path = self.task_queue.get()
             print(f"Processing file: {file_path}")
             if not self.video_player:
-                self.video_player = VideoPlayer(self.tk_instance, file_path)
+                self.video_player = VideoPlayer(self.tk_instance, file_path, "")
                 self.tk_instance.deiconify()
             else:
                 self.video_player.load_img(file_path, False)
 
         self.tk_instance.after(100, self.process_tasks)
-
-    def show_file(self, file_path):
-        print(self.tk_instance)
-        if not self.tk_instance:
-            self.tk_instance = tk.Tk()
-            self.video_player = VideoPlayer(self.tk_instance, file_path)
-            self.tk_instance.mainloop()
-        else:
-            self.video_player.load_img(file_path, False)
 
 
 def resource_path(relative_path):
@@ -430,7 +487,7 @@ def get_dir_path(directory_path):
 def main(directory):
     if development_mode:
         root = tk.Tk()
-        VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'))
+        VideoPlayer(root, resource_path('IM_0003_mp4_volume.nii.gz'), resource_path('IM_0003_mp4_volume2.nii.gz'))
         root.mainloop()
     else:
         root = tk.Tk()
@@ -450,7 +507,6 @@ def main(directory):
         except KeyboardInterrupt:
             observer.stop()
         observer.join()
-
 
 
 from dotenv import load_dotenv
