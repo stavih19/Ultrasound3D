@@ -52,18 +52,18 @@ class VideoPlayer:
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # Add the rotation button
-        self.rotate_button = tk.Button(self.right_frame, text="Rotate 90°", command=self.rotate_frame, width=10, height=1)
+        self.rotate_button = tk.Button(self.right_frame, text="Rotate 90°", command=self.rotate_frame, width=13, height=1)
         self.rotate_button.pack(pady=10)
         self.rotate_button.place(x=130 + control_x_location_bias, y=self.window_height - 130 + control_y_location_bias)
         self.current_rotation = 0
 
         # Add resize buttons to the button frame
-        self.increase_button = tk.Button(self.right_frame, text="+10%", command=self.increase_frame, width=2, height=1)
+        self.increase_button = tk.Button(self.right_frame, text="+10%", command=self.increase_frame, width=4, height=1)
         self.increase_button.pack(side=tk.RIGHT, padx=10)
         self.increase_button.place(x=195 + control_x_location_bias, y=self.window_height - 80 + control_y_location_bias)
 
         # Add resize buttons to the button frame
-        self.decrease_button = tk.Button(self.right_frame, text="-10%", command=self.decrease_frame, width=2, height=1)
+        self.decrease_button = tk.Button(self.right_frame, text="-10%", command=self.decrease_frame, width=4, height=1)
         self.decrease_button.pack(side=tk.RIGHT, padx=10)
         self.decrease_button.place(x=130 + control_x_location_bias, y=self.window_height - 80 + control_y_location_bias)
 
@@ -91,7 +91,7 @@ class VideoPlayer:
         self.z_diff_scrollbar.place(x=30 + control_x_location_bias, y=self.window_height - 37 + control_y_location_bias)
 
         # Add reset configuration to the button frame
-        self.decrease_button = tk.Button(self.right_frame, text="reset", command=self.reset_config, width=2, height=1)
+        self.decrease_button = tk.Button(self.right_frame, text="reset", command=self.reset_config, width=4, height=1)
         self.decrease_button.pack(side=tk.RIGHT, padx=10)
         self.decrease_button.place(x=100 + control_x_location_bias, y=self.window_height - - 10 + control_y_location_bias)
 
@@ -159,7 +159,7 @@ class VideoPlayer:
 
         # Determine the file type and load the appropriate file
         self.load_img(file_path, True)
-        if file_path_2 is not "":
+        if file_path_2 != "":
             self.load_img(file_path_2, False)
     
     def rotate_frame(self):
